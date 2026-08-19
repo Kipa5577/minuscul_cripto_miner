@@ -21,7 +21,7 @@ digest_fetched = sys.wire('digest_fetched', 1)
 
 engine = Sha256CoreV1(sys, 'sha256_engine', reset, bus_if,
                        seed_out, nbbytes_out, digest_out, digest_ready, digest_fetched,
-                       debug=False)
+                       debug=False,l2_rounds_per_cycle=4)
 
 seeds = [
     (0b11110000_11101111_01011101_10110110, 4),

@@ -1,3 +1,5 @@
+import os
+
 import py4hw
 from minuscul_crypto_miner.architecture.Sha256Crcuits import *
 from minuscul_crypto_miner.architecture.bus.bus import Bus, BusInterface, ResultBus
@@ -16,8 +18,8 @@ from minuscul_crypto_miner.architecture.difficultyValidator.DifficultyValidator 
 
 # Benchmark variables
 CLOCK_FREQUENCY_HZ = 50_000_000  # assumed target clock frequency, for translating cycles into wall-clock time
-NUM_ENGINES = 10               # number of Sha256CoreV1 instances sharing the bus
-NUM_BENCHMARK_HASHES = 200       # total digests to examine (across all engines) before reporting
+NUM_ENGINES = int(os.environ.get("BENCH_NUM_ENGINES", 10))  # number of Sha256CoreV1 instances sharing the bus
+NUM_BENCHMARK_HASHES = int(os.environ.get("BENCH_NUM_HASHES", 200))  # total digests to examine before reporting
 TARGET = 0                       # never passes: this run only measures throughput, not found blocks
 
 

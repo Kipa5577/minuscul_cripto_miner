@@ -7,7 +7,8 @@ from sha256_core_v1_test_doubles import Sender, Collector
 # Benchmark variables
 CLOCK_FREQUENCY_HZ = 50_000_000  # assumed target clock frequency, for translating cycles into wall-clock time
 NUM_BENCHMARK_SEEDS = 50
-
+L1_WORDS_PER_CYCLE = 2 # 1 2
+L2_ROUNDS_PER_CYCLE = 4 # 1 2 4
 
 sys = py4hw.HWSystem()
 
@@ -24,7 +25,7 @@ digest_fetched = sys.wire('digest_fetched', 1)
 
 engine = Sha256CoreV1(sys, 'sha256_engine', reset, bus_if,
                        seed_out, nbbytes_out, digest_out, digest_ready, digest_fetched,
-                       debug=False)
+                       debug=False,l2_rounds_per_cycle=L2_ROUNDS_PER_CYCLE,l1_words_per_cycle=L1_WORDS_PER_CYCLE)
 
 benchmark_seeds = [(i, max(1, (i.bit_length() + 7) // 8)) for i in range(1, NUM_BENCHMARK_SEEDS + 1)]
 

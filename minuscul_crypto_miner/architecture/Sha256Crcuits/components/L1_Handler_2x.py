@@ -1,37 +1,29 @@
-import py4hw 
+import py4hw
 from minuscul_crypto_miner.architecture.Sha256Crcuits.components.L1_res_Buffer import L1BufferInterf
-
+from minuscul_crypto_miner.architecture.Sha256Crcuits.components.L1_Handler import sha256_schedule_word
 
 
 '''
 
-State machine of the component:
+State machine of the component (identical shape to L1_Handler):
 0 = reset_state
 1 = init_state
 2 = calculation_state
 3 = wait_to_publish # W[0..63] complete, waiting for L2_Handler to finish with L1_res_Buffer
-4 = done             
+4 = done
 
 '''
 
 
-def ror(n,rotations,width):
-    mask = (1<< width) - 1
-    return ((n>>rotations)|(n<<(width-rotations))) & mask
-
-
-def sha256_schedule_word(list_W,i):
-    # W[i] = W[i-16] + sigma0(W[i-15]) + W[i-7] + sigma1(W[i-2]). Pure and
-    # stateless (only reads indices < i) so L1_Handler_2x can compute W[i]
-    # and W[i+1] independently in the same cycle without duplicating this
-    # logic -- neither depends on the other, since (i+1)'s furthest-back
-    # reference is (i+1)-16 = i-15, never i itself.
-    s0 = ror(list_W[i-15],7,32) ^ ror(list_W[i-15],18,32) ^ (list_W[i-15]>>3)
-    s1 = ror(list_W[i-2],17,32) ^ ror(list_W[i-2],19,32) ^ (list_W[i-2]>>10)
-    return (list_W[i-16] + s0 + list_W[i-7] + s1) & 0xFFFFFFFF
-
-
-class L1_Handler(py4hw.Logic):
+class L1_Handler_2x(py4hw.Logic):
+    # Computes 2 message-schedule words/cycle (24 cycles for the expansion
+    # loop instead of L1_Handler's 48). W[i] and W[i+1] never depend on each
+    # other -- (i+1)'s furthest-back reference is (i+1)-16 = i-15, never i
+    # itself -- so unlike L2_Handler's round unrolling, no extra read/write
+    # bandwidth is needed anywhere: the 512-bit input and the L1BufferInterf
+    # output are already fully parallel (all 64 words published in one
+    # shot), only this internal loop was sequential. Same constructor
+    # signature as L1_Handler, drop-in interchangeable.
     def __init__(self,parent,name,reset,initImput,inputReady,inputConsumed,outputFORlayer2:L1BufferInterf,done,scheduleDrained,debug=False):
         super().__init__(parent,name)
 
@@ -41,17 +33,17 @@ class L1_Handler(py4hw.Logic):
         self.output = self.addInterfaceSource("out",outputFORlayer2)
 
         self.inputReady = self.addIn("inputReady",inputReady)
-        self.inputConsumed = self.addOut("inputConsumed",inputConsumed) # to InputFormatter: this block has been captured, safe to present the next one
-        self.scheduleDrained = self.addIn("scheduleDrained",scheduleDrained) # from L2_Handler: previous schedule fully read, L1_res_Buffer is free to be overwritten
+        self.inputConsumed = self.addOut("inputConsumed",inputConsumed)
+        self.scheduleDrained = self.addIn("scheduleDrained",scheduleDrained)
 
         self.list_W = [0]*64
         self.i = 16
         self.state = 0
-        self.buffer_available = True # nothing published yet, so L1_res_Buffer starts out free
+        self.buffer_available = True
         self.debug = debug
 
         if self.debug:
-            print("L1_Handler created:")
+            print("L1_Handler_2x created:")
             print(f"i = {self.i},state = {self.state},reset = {self.reset.get()}")
 
     def clock(self):
@@ -71,8 +63,7 @@ class L1_Handler(py4hw.Logic):
                     if self.debug:
                         print("State:reset_state[0]->init_state[1]")
             case 1:
-                # Initialise de first values
-                self.list_W[0] = (self.init.get()>>(32*15))&0b11111111_11111111_11111111_11111111 #32 bit register 
+                self.list_W[0] = (self.init.get()>>(32*15))&0b11111111_11111111_11111111_11111111
                 self.list_W[1] = (self.init.get()>>(32*14))&0b11111111_11111111_11111111_11111111
                 self.list_W[2] = (self.init.get()>>(32*13))&0b11111111_11111111_11111111_11111111
                 self.list_W[3] = (self.init.get()>>(32*12))&0b11111111_11111111_11111111_11111111
@@ -96,9 +87,10 @@ class L1_Handler(py4hw.Logic):
 
             case 2:
                 if self.debug:
-                    print(f"L1_Handler:i:{self.i}")
+                    print(f"L1_Handler_2x:i:{self.i}")
                 self.list_W[self.i] = sha256_schedule_word(self.list_W,self.i)
-                self.i = self.i + 1
+                self.list_W[self.i+1] = sha256_schedule_word(self.list_W,self.i+1)
+                self.i = self.i + 2
 
                 if self.i == 64 :
                     self.state = 3
@@ -119,9 +111,7 @@ class L1_Handler(py4hw.Logic):
                 if self.debug:
                     print("done[4]->reset_state[0]")
                     for i in range(64):
-                        print(f"L1_Handler:W[{i}] = {self.list_W[i]:032b}")
-                
-
+                        print(f"L1_Handler_2x:W[{i}] = {self.list_W[i]:032b}")
 
         self.done.prepare(done)
         self.inputConsumed.prepare(input_consumed)
@@ -189,8 +179,4 @@ class L1_Handler(py4hw.Logic):
         self.output.W60.prepare(self.list_W[60])
         self.output.W61.prepare(self.list_W[61])
         self.output.W62.prepare(self.list_W[62])
-        self.output.W63.prepare(self.list_W[63])            
-
-
-
-        
+        self.output.W63.prepare(self.list_W[63])

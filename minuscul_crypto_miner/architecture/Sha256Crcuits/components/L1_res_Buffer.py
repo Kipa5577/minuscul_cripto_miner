@@ -75,7 +75,7 @@ class L1BufferInterf(py4hw.Interface):
 
 
 class L1_res_Buffer(py4hw.Logic):
-    def __init__(self,parent,name,L1Connection:L1BufferInterf,output_address,output_val,values_updated,start_consumed,debug=False):
+    def __init__(self,parent,name,L1Connection:L1BufferInterf,output_address,output_val,values_updated,start_consumed,debug=False,extra_ports=None):
         super().__init__(parent,name)
 
         self.address = self.addIn("output_address",output_address)
@@ -83,6 +83,19 @@ class L1_res_Buffer(py4hw.Logic):
         self.L1 = self.addInterfaceSink("L1Connection",L1Connection)
         self.values_updated = self.addOut("values_updated",values_updated)
         self.start_consumed = self.addIn("start_consumed",start_consumed) # from L2_Handler: it has captured this "start", safe to drop values_updated
+
+        # Additional (address, val) read ports beyond the primary one above,
+        # for L2_Handler variants that read more than one schedule word per
+        # cycle (see L2_Handler_2x/L2_Handler_4x). Each extra port indexes
+        # the same self.Buffers independently -- free to add here since
+        # Buffers already holds all 64 words at once in this behavioral
+        # model, unlike a real multi-port SRAM which would cost real area.
+        self.extra_addresses = []
+        self.extra_vals = []
+        for idx, (extra_address, extra_val) in enumerate(extra_ports or []):
+            self.extra_addresses.append(self.addIn(f"extra_output_address_{idx}",extra_address))
+            self.extra_vals.append(self.addOut(f"extra_output_val_{idx}",extra_val))
+
         self.Buffers = [0]*64
         self.pending = False # held (not a one-shot pulse) so L2_Handler can never miss it by being busy elsewhere when it fires
         self.debug = debug
@@ -96,6 +109,9 @@ class L1_res_Buffer(py4hw.Logic):
 
         add = self.address.get()
         self.val.prepare(self.Buffers[add])
+
+        for extra_address, extra_val in zip(self.extra_addresses, self.extra_vals):
+            extra_val.prepare(self.Buffers[extra_address.get()])
 
         dataReady = self.L1.DataReady.get()
 
