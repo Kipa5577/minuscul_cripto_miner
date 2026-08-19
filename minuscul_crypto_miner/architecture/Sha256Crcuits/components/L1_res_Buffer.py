@@ -74,30 +74,35 @@ class L1BufferInterf(py4hw.Interface):
         
 
 
-class FirstLayerOutputBuffer(py4hw.Logic):
-    def __init__(self,parent,name,L1Connection:L1BufferInterf,output_address,output_val,values_updated):
+class L1_res_Buffer(py4hw.Logic):
+    def __init__(self,parent,name,L1Connection:L1BufferInterf,output_address,output_val,values_updated,start_consumed,debug=False):
         super().__init__(parent,name)
 
         self.address = self.addIn("output_address",output_address)
         self.val = self.addOut("output_val",output_val)
         self.L1 = self.addInterfaceSink("L1Connection",L1Connection)
         self.values_updated = self.addOut("values_updated",values_updated)
+        self.start_consumed = self.addIn("start_consumed",start_consumed) # from L2_Handler: it has captured this "start", safe to drop values_updated
         self.Buffers = [0]*64
+        self.pending = False # held (not a one-shot pulse) so L2_Handler can never miss it by being busy elsewhere when it fires
+        self.debug = debug
 
-        print("FirstLayerOutputBuffer")
+        if self.debug:
+            print("L1_res_Buffer")
 
-    
+
     def clock(self):
 
-        
+
         add = self.address.get()
         self.val.prepare(self.Buffers[add])
 
         dataReady = self.L1.DataReady.get()
-        self.values_updated.prepare(1 if dataReady else 0)
 
         if dataReady:
-            print("FirstLayerBuffer:DataLoaded")
+            self.pending = True
+            if self.debug:
+                print("L1_res_Buffer:DataLoaded")
             self.Buffers[0] = self.L1.W0.get()
             self.Buffers[1] = self.L1.W1.get()
             self.Buffers[2] = self.L1.W2.get()
@@ -162,6 +167,11 @@ class FirstLayerOutputBuffer(py4hw.Logic):
             self.Buffers[61] = self.L1.W61.get()
             self.Buffers[62] = self.L1.W62.get()
             self.Buffers[63] = self.L1.W63.get()
+
+        if self.start_consumed.get() == 1:
+            self.pending = False
+
+        self.values_updated.prepare(1 if self.pending else 0)
 
 
         

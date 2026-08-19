@@ -1,31 +1,51 @@
 import py4hw
 from minuscul_crypto_miner.architecture.Sha256Crcuits import *
+from minuscul_crypto_miner.architecture.bus.bus import BusInterface
+from sha256_core_v1_test_doubles import Sender, Collector
+import hashlib
 
 
 sys = py4hw.HWSystem()
 
-input_wire = sys.wire('input', 512)
-input_ready = sys.wire('input_ready', 1)
-output = sys.wire('output', 512)
-output_ready = sys.wire('output_ready', 8)
-reset = sys.wire('reset',1)
-output_consumed = sys.wire('output_consumed',1)
-NBbytes = sys.wire('NBbytes',8)
+reset = sys.wire('reset', 1)
+py4hw.Constant(sys, 'reset', 0, reset)
 
-py4hw.Constant(sys, 'input', 0b11110000_11101111_01011101_10110110, input_wire)
-py4hw.Constant(sys, 'input_ready', 1, input_ready)
-py4hw.Constant(sys, 'reset', 1, reset)
-py4hw.Constant(sys, 'output_consumed',1,output_consumed)
-py4hw.Constant(sys, 'NBbytes',4,NBbytes)
+# Sender -> Sha256CoreV1
+bus_if = BusInterface(sys, 'bus_if')
 
-# Instantiate the SHA256 engine
-engine = sha256_Engine(sys, 'sha256_engine', input_wire, input_ready,NBbytes ,output, output_ready, reset, output_consumed)
+seed_out = sys.wire('seed_out', 512)
+nbbytes_out = sys.wire('nbbytes_out', 8)
+digest_out = sys.wire('digest_out', 256)
+digest_ready = sys.wire('digest_ready', 1)
+digest_fetched = sys.wire('digest_fetched', 1)
 
-wvf = py4hw.Waveform(sys, 'wvf', [input_wire, output,engine.L1_done,output_ready,engine.output_address,engine.output_val])
+engine = Sha256CoreV1(sys, 'sha256_engine', reset, bus_if,
+                       seed_out, nbbytes_out, digest_out, digest_ready, digest_fetched,
+                       debug=False)
+
+seeds = [
+    (0b11110000_11101111_01011101_10110110, 4),
+    (0x1, 1),
+    (0x2, 1),
+    (0xDEADBEEF, 4),
+    (0xC0FFEE, 3),
+]
+
+snd = Sender(sys, 'snd', bus_if, seeds, debug=False)
+col = Collector(sys, 'col', seed_out, nbbytes_out, digest_out, digest_ready, digest_fetched)
 
 sim = sys.getSimulator()
-while output.get() == 0 :
+while len(col.captured) < len(seeds):
     sim.clk(1)
-    print(f"address = {engine.output_address.get()} | val = {engine.output_val.get()}")
-print(f"output {output.get():0256b}")
-wvf.gui()
+
+passed = True
+for seed, nbbytes, digest in col.captured:
+    expected = int(hashlib.sha256(seed.to_bytes(nbbytes, byteorder='big')).hexdigest(), 16)
+    match = (digest == expected)
+    passed = passed and match
+    print(f"seed={seed:#x} nbbytes={nbbytes} digest={digest:064x} expected={expected:064x} match={match}")
+
+if passed:
+    print("Test Passed")
+else:
+    print("Test Failed")

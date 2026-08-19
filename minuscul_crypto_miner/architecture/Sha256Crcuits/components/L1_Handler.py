@@ -1,21 +1,22 @@
 import py4hw 
-from minuscul_crypto_miner.architecture.Sha256Crcuits.components.firstLayerOutputBuffer import L1BufferInterf
-from minuscul_crypto_miner.architecture.Sha256Crcuits.components.ror import ror
+from minuscul_crypto_miner.architecture.Sha256Crcuits.components.L1_res_Buffer import L1BufferInterf
+
 
 
 '''
 
 State machine of the component:
 0 = reset_state
-1 = init_state 
+1 = init_state
 2 = calculation_state
-3 = done # result ready to be put in to the second layer
+3 = wait_to_publish # W[0..63] complete, waiting for L2_Handler to finish with L1_res_Buffer
+4 = done             
 
 '''
 
 
-class FirstLayer(py4hw.Logic):
-    def __init__(self,parent,name,reset,initImput,inputReady,outputFORlayer2:L1BufferInterf,done): # add a debug flag later 
+class L1_Handler(py4hw.Logic):
+    def __init__(self,parent,name,reset,initImput,inputReady,inputConsumed,outputFORlayer2:L1BufferInterf,done,scheduleDrained,debug=False):
         super().__init__(parent,name)
 
         self.reset = self.addIn("reset",reset)
@@ -24,13 +25,18 @@ class FirstLayer(py4hw.Logic):
         self.output = self.addInterfaceSource("out",outputFORlayer2)
 
         self.inputReady = self.addIn("inputReady",inputReady)
+        self.inputConsumed = self.addOut("inputConsumed",inputConsumed) # to InputFormatter: this block has been captured, safe to present the next one
+        self.scheduleDrained = self.addIn("scheduleDrained",scheduleDrained) # from L2_Handler: previous schedule fully read, L1_res_Buffer is free to be overwritten
 
         self.list_W = [0]*64
         self.i = 16
         self.state = 0
+        self.buffer_available = True # nothing published yet, so L1_res_Buffer starts out free
+        self.debug = debug
 
-        print("FirstLayer created:")
-        print(f"i = {self.i},state = {self.state},reset = {self.reset.get()}")
+        if self.debug:
+            print("L1_Handler created:")
+            print(f"i = {self.i},state = {self.state},reset = {self.reset.get()}")
 
     def ror(self, n, rotations, width):
         mask = (1<< width) - 1
@@ -39,15 +45,20 @@ class FirstLayer(py4hw.Logic):
 
     def clock(self):
 
-        done = 0 
+        if self.scheduleDrained.get() == 1:
+            self.buffer_available = True
+
+        done = 0
+        input_consumed = 0
         match self.state:
             case 0:
                 for i in range(64):
                     self.list_W[i] = 0
-            
+
                 if self.inputReady.get() == 1:
-                    self.state = 1 
-                    print("State:reset_state[0]->init_state[1]")
+                    self.state = 1
+                    if self.debug:
+                        print("State:reset_state[0]->init_state[1]")
             case 1:
                 # Initialise de first values
                 self.list_W[0] = (self.init.get()>>(32*15))&0b11111111_11111111_11111111_11111111 #32 bit register 
@@ -67,11 +78,14 @@ class FirstLayer(py4hw.Logic):
                 self.list_W[14] = (self.init.get()>>(32*1))&0b11111111_11111111_11111111_11111111
                 self.list_W[15] = (self.init.get()>>(32*0))&0b11111111_11111111_11111111_11111111
 
+                input_consumed = 1
                 self.state = 2
-                print("init_state[1]->calculation_state[2]")
+                if self.debug:
+                    print("init_state[1]->calculation_state[2]")
 
             case 2:
-                print(f"FirstLayer:i:{self.i}")
+                if self.debug:
+                    print(f"L1_Handler:i:{self.i}")
                 s0_p1 = self.ror(self.list_W[self.i-15],7,32)
                 s0_p2 = self.ror(self.list_W[self.i-15],18,32)
                 s0_p3 = self.list_W[self.i-15]>>3
@@ -85,17 +99,29 @@ class FirstLayer(py4hw.Logic):
 
                 if self.i == 64 :
                     self.state = 3
-                    print("calculation_state[2]->done[3]")
+                    if self.debug:
+                        print("calculation_state[2]->wait_to_publish[3]")
 
             case 3:
+                if self.buffer_available:
+                    self.state = 4
+                    if self.debug:
+                        print("wait_to_publish[3]->done[4]")
+
+            case 4:
                 done = 1
-                self.state = 4
-                for i in range(64):
-                    print(f"FirstLayer:W[{i}] = {self.list_W[i]:032b}")
+                self.buffer_available = False
+                self.i = 16
+                self.state = 0
+                if self.debug:
+                    print("done[4]->reset_state[0]")
+                    for i in range(64):
+                        print(f"L1_Handler:W[{i}] = {self.list_W[i]:032b}")
                 
 
 
         self.done.prepare(done)
+        self.inputConsumed.prepare(input_consumed)
         self.output.DataReady.prepare(done)
         self.output.W0.prepare(self.list_W[0])
         self.output.W1.prepare(self.list_W[1])
