@@ -10,7 +10,9 @@ from minuscul_crypto_miner.algorithms.sha256 import bitcoin_double_sha256
 
 NUM_LANES = 29
 NUM_RESULTS_TO_COLLECT = 30
-MAX_CYCLES = 10_000_000
+MAX_CYCLES = 2_000_000
+L1_WORDS_PER_CYCLE = 2  # 1 2 -- applies to both continuation and finisher stages
+L2_ROUNDS_PER_CYCLE = 4  # 1 2 4 -- applies to both continuation and finisher stages
 
 # Fixed 80-byte test header. Not a real Bitcoin header -- correctness here
 # only requires the header split fed to hardware and the split fed to the
@@ -21,6 +23,7 @@ HEADER_FIRST64 = HEADER_TEMPLATE[:64]
 MERKLE_TAIL = HEADER_TEMPLATE[64:68]
 TIME_FIELD = HEADER_TEMPLATE[68:72]
 BITS_FIELD = HEADER_TEMPLATE[72:76]
+
 
 # Compact difficulty with the same leniency as the multi-core benchmark's
 # TARGET=(1<<256)//16 (mantissa=0x100000, exponent=0x20 -> target=2**252),
@@ -101,7 +104,9 @@ col = FoundBlockCollector(sys,'col',result_ready,found_nonce_out,found_nbbytes_o
 engine = BitcoinMinerEngine(sys,'miner',reset,header_first64_wire,new_job,
                             merkle_tail_wire,time_wire,bits_wire,nBits_wire,
                             result_ready,found_nonce_out,found_nbbytes_out,found_digest_out,result_fetched,
-                            num_lanes=NUM_LANES,debug=False)
+                            num_lanes=NUM_LANES,
+                            l1_words_per_cycle=L1_WORDS_PER_CYCLE,l2_rounds_per_cycle=L2_ROUNDS_PER_CYCLE,
+                            debug=False)
 
 sim = sys.getSimulator()
 

@@ -13,9 +13,13 @@ A FIFO was used because the Sha256CoreV1 can have multiple calculations in the p
 
 class OutputBuffer(py4hw.Logic):
     def __init__(self,parent,name,reset,
+                 # Input
                  Seed_Push_IN,NBbytes_Push_IN,Push_Valid_IN,
+                 # Control 
                  Digest_IN,Digest_Valid_IN,Digest_Consumed_OUT,
+                 # Outputs 
                  Seed_OUT,NBbytes_OUT,Digest_OUT,Digest_Ready,Digest_Fetched,
+                 
                  debug=False):
         super().__init__(parent,name)
 

@@ -2,7 +2,7 @@ import itertools
 
 import matplotlib.pyplot as plt
 from matplotlib.animation import FuncAnimation
-from matplotlib.patches import Rectangle
+from matplotlib.patches import FancyBboxPatch
 import py4hw
 
 from minuscul_crypto_miner.architecture.Sha256Crcuits import *
@@ -14,11 +14,14 @@ from minuscul_crypto_miner.architecture.difficultyValidator.DifficultyValidator 
 # --- Simulation speed -------------------------------------------------------
 # One simulated clock edge is advanced per animation frame; this controls
 # how many of those frames are drawn per real second.
-CLOCKS_PER_SECOND = 12
+CLOCKS_PER_SECOND = 120
 
-NUM_ENGINES = 10          # number of Sha256CoreV1 instances -- change freely
+NUM_ENGINES = 5          # number of Sha256CoreV1 instances -- change freely
 NUM_DIGESTS_TO_SHOW = 40  # stop once this many digests have reached DifficultyValidator
 TARGET = (1 << 256) // 16  # lenient threshold so a few "found blocks" show up during the run
+
+L1_WORDS_PER_CYCLE = 2 # 1 2
+L2_ROUNDS_PER_CYCLE = 4 # 1 2 4
 
 ENGINE_STAGE_NAMES = [
     "InputBuffer",
@@ -49,6 +52,14 @@ class Token:
     def label(self):
         return f"{self.seed:#x}"
 
+    @property
+    def text_color(self):
+        """Black or white label text, whichever contrasts better against
+        this token's fill color (simple relative-luminance threshold)."""
+        r, g, b = (int(self.color[i:i + 2], 16) for i in (1, 3, 5))
+        luminance = 0.299 * r + 0.587 * g + 0.114 * b
+        return '#1b1b1b' if luminance > 150 else 'white'
+
 
 # --- Build the real simulation ----------------------------------------------
 sys_ = py4hw.HWSystem()
@@ -73,7 +84,7 @@ for i in range(NUM_ENGINES):
 
     engine = Sha256CoreV1(sys_, f'sha256_engine_{i}', reset, slave_ifs[i],
                            seed_out, nbbytes_out, digest_out, digest_ready, digest_fetched,
-                           debug=False)
+                           debug=False,l2_rounds_per_cycle=L2_ROUNDS_PER_CYCLE,l1_words_per_cycle=L1_WORDS_PER_CYCLE)
     engines.append(engine)
     engine_outputs.append((seed_out, nbbytes_out, digest_out, digest_ready, digest_fetched))
 
@@ -228,10 +239,7 @@ def advance_one_clock():
         gen_slot = None
     _prev_bus_busy = bus_busy
 
-    # --- seedGenerator: creates a token once it has a genuinely new value
-    # ready. It no longer cycles through a separate "holding" state (that
-    # gap was removed to cut delivery latency), so state alone can't signal
-    # "a new value" -- Seq flips exactly once per new value instead.
+    # --- seedGenerator: creates a token once it has a genuinely new value ready.
     if gen.state == 1 and gen.seq != _prev_gen_seq:
         gen_slot = Token(gen.seedVal, gen.NBbytes)
     _prev_gen_seq = gen.seq
@@ -256,25 +264,37 @@ CANVAS_H = TOTAL_ROWS_H + ROWS_TOP_MARGIN
 
 BOX_MARGIN_X = 0.10
 BOX_MARGIN_Y = 0.12
+ROUNDING = 0.05
+
+BG_COLOR = "#f4f6f8"
+STAGE_EDGE = "#2c3e50"
+SEPARATOR_COLOR = "#b0b8c1"
+IDLE_TOKEN_EDGE = "#c7ced6"
+FOUND_EDGE = "#2ecc71"
 
 fig, ax = plt.subplots(figsize=(1.9 * NUM_COLS, max(4.5, 1.6 * NUM_ENGINES + 1.6)))
+fig.patch.set_facecolor(BG_COLOR)
+ax.set_facecolor(BG_COLOR)
 ax.set_xlim(0, NUM_COLS)
 ax.set_ylim(0, CANVAS_H + 0.35)
 ax.axis('off')
-fig.suptitle(f"Full mining pipeline ({NUM_ENGINES} x Sha256CoreV1)", fontsize=14, fontweight='bold')
+fig.suptitle(f"Full mining pipeline ({NUM_ENGINES} x Sha256CoreV1)", fontsize=15, fontweight='bold',
+             color=STAGE_EDGE, family='sans-serif')
 
-wide_boxes = {}     # col -> (stage_box, token_box, token_label)
-engine_boxes = {}   # (row, col_offset) -> (stage_box, token_box, token_label)
+wide_boxes = {}     # col -> (stage_box, token_label)
+engine_boxes = {}   # (row, col_offset) -> (stage_box, token_label)
 
 
 def _make_box(x, y, w, h, label=None, label_y=None):
-    stage_box = Rectangle((x + BOX_MARGIN_X, y + BOX_MARGIN_Y), w - 2 * BOX_MARGIN_X, h - 2 * BOX_MARGIN_Y,
-                           facecolor='white', edgecolor='black', linewidth=1.6, zorder=2)
+    stage_box = FancyBboxPatch((x + BOX_MARGIN_X, y + BOX_MARGIN_Y),
+                                w - 2 * BOX_MARGIN_X, h - 2 * BOX_MARGIN_Y,
+                                boxstyle=f"round,pad=0,rounding_size={ROUNDING}",
+                                facecolor='white', edgecolor=IDLE_TOKEN_EDGE,
+                                linewidth=1.4, linestyle=(0, (4, 3)), zorder=2)
     ax.add_patch(stage_box)
-    token_label = ax.text(x + w / 2, y + h / 2, '', ha='center', va='center',
-                           fontsize=8, fontweight='bold', zorder=3)
+    token_label = ax.text(x + w / 2, y + h / 2, '', ha='center', va='center',fontsize=8.5, fontweight='bold', zorder=3)
     if label is not None:
-        ax.text(x + w / 2, label_y, label, ha='center', va='bottom', fontsize=9, rotation=0)
+        ax.text(x + w / 2, label_y, label, ha='center', va='bottom', fontsize=9.5,fontweight='bold', color=STAGE_EDGE, rotation=0)
     return stage_box, token_label
 
 
@@ -288,42 +308,44 @@ for col, name in [(COL_GEN, "seedGenerator"), (COL_BUS, "Bus"),
 for row in range(NUM_ENGINES):
     y = row * ROW_H
     ax.text(COL_ENGINE_START - 0.05, y + ROW_H / 2, f"engine {row}",
-             ha='right', va='center', fontsize=9, rotation=90)
+             ha='right', va='center', fontsize=9, fontweight='bold', color=STAGE_EDGE, rotation=90)
     for j, name in enumerate(ENGINE_STAGE_NAMES):
         col = COL_ENGINE_START + j
         label = name if row == NUM_ENGINES - 1 else None
-        stage_box, token_label = _make_box(col, y, 1, ROW_H,
-                                            label=label, label_y=TOTAL_ROWS_H + 0.15)
+        stage_box, token_label = _make_box(col, y, 1, ROW_H,label=label, label_y=TOTAL_ROWS_H + 0.15)
         engine_boxes[(row, j)] = (stage_box, token_label)
-    # Dotted delimiter between engine rows.
+    # Dashed delimiter between engine rows.
     if row > 0:
-        ax.plot([COL_ENGINE_START, COL_RESULTBUS], [y, y], linestyle=':', color='black', linewidth=1.0, zorder=1)
+        ax.plot([COL_ENGINE_START, COL_RESULTBUS], [y, y],linestyle='--', color=SEPARATOR_COLOR, linewidth=1, zorder=1)
 
-# Dotted vertical delimiters between every component column.
-for col in range(NUM_COLS + 1):
-    ax.plot([col, col], [0, CANVAS_H], linestyle=':', color='black', linewidth=1.2, zorder=1)
+# Dashed vertical delimiters between every component column.
+for col in range(1, NUM_COLS):
+    ax.plot([col, col], [0.05, CANVAS_H - 0.05],linestyle='--', color=SEPARATOR_COLOR, linewidth=1, zorder=1)
 
 # A single line tracing the overall order of operations -- not the real wiring.
 order_y = CANVAS_H + 0.15
-ax.annotate('', xy=(NUM_COLS - 0.05, order_y), xytext=(0.05, order_y),
-            arrowprops=dict(arrowstyle='-|>', color='#555555', linewidth=1.5))
+ax.annotate('', xy=(NUM_COLS - 0.05, order_y), xytext=(0.05, order_y),arrowprops=dict(arrowstyle='-|>', color='#7f8c9a', linewidth=2))
 
-cycle_text = ax.text(0.0, CANVAS_H + 0.32, '', fontsize=10, ha='left', va='top', family='monospace')
-status_text = ax.text(NUM_COLS, CANVAS_H + 0.32, '', fontsize=10, ha='right', va='top', family='monospace')
+cycle_text = ax.text(0.0, CANVAS_H + 0.32, '', fontsize=10.5, ha='left', va='top',family='monospace', color=STAGE_EDGE, fontweight='bold')
+status_text = ax.text(NUM_COLS, CANVAS_H + 0.32, '', fontsize=10.5, ha='right', va='top',family='monospace', color=STAGE_EDGE, fontweight='bold')
 
 cycle_count = 0
 
 
 def _paint(box, label, token):
     if token is None:
-        box.set_facecolor('none')
-        box.set_edgecolor('black')
+        box.set_facecolor('white')
+        box.set_edgecolor(IDLE_TOKEN_EDGE)
+        box.set_linewidth(1.4)
+        box.set_linestyle((0, (4, 3)))
         label.set_text('')
     else:
         box.set_facecolor(token.color)
-        box.set_edgecolor('#2ecc71' if token.found else 'black')
-        box.set_linewidth(3 if token.found else 1.6)
-        label.set_text(('*' if token.found else '') + token.label)
+        box.set_edgecolor(FOUND_EDGE if token.found else STAGE_EDGE)
+        box.set_linewidth(3.2 if token.found else 1.6)
+        box.set_linestyle('solid')
+        label.set_color(token.text_color)
+        label.set_text(('★ ' if token.found else '') + token.label)
 
 
 def update(_frame):

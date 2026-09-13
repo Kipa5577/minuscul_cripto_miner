@@ -21,6 +21,9 @@ State machine of the component:
 
 
 class Bus(py4hw.Logic):
+    # TODO(review): Bus and ResultBus (below) are near-identical mirror-image
+    # arbiter FSMs (idle/dispatching vs idle/forwarding, same _settled-guard and
+    # priority-scan shape, ~90 lines each) -- could share a base arbiter class.
     def __init__(self,parent,name,InputBusInterface,OutputBusInterfaceList,debug=False): # This bus routes a single seed stream to the first available sha256 engine
         super().__init__(parent,name)
 

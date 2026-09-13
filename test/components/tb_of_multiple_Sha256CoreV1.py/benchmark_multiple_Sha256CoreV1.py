@@ -1,4 +1,5 @@
 import os
+import time
 
 import py4hw
 from minuscul_crypto_miner.architecture.Sha256Crcuits import *
@@ -18,10 +19,15 @@ from minuscul_crypto_miner.architecture.difficultyValidator.DifficultyValidator 
 
 # Benchmark variables
 CLOCK_FREQUENCY_HZ = 50_000_000  # assumed target clock frequency, for translating cycles into wall-clock time
-NUM_ENGINES = int(os.environ.get("BENCH_NUM_ENGINES", 10))  # number of Sha256CoreV1 instances sharing the bus
+NUM_ENGINES = int(os.environ.get("BENCH_NUM_ENGINES", 5))  # number of Sha256CoreV1 instances sharing the bus
 NUM_BENCHMARK_HASHES = int(os.environ.get("BENCH_NUM_HASHES", 200))  # total digests to examine before reporting
 TARGET = 0                       # never passes: this run only measures throughput, not found blocks
 
+L1_WORDS_PER_CYCLE = 2 # 1 2
+L2_ROUNDS_PER_CYCLE = 4 # 1 2 4
+
+tb_start_time = time.perf_counter()
+init_start_time = time.perf_counter()
 
 sys = py4hw.HWSystem()
 
@@ -46,7 +52,7 @@ for i in range(NUM_ENGINES):
 
     engine = Sha256CoreV1(sys, f'sha256_engine_{i}', reset, slave_ifs[i],
                            seed_out, nbbytes_out, digest_out, digest_ready, digest_fetched,
-                           debug=False)
+                           debug=False,l2_rounds_per_cycle=L2_ROUNDS_PER_CYCLE,l1_words_per_cycle=L1_WORDS_PER_CYCLE)
     engines.append(engine)
     engine_outputs.append((seed_out, nbbytes_out, digest_out, digest_ready, digest_fetched))
 
@@ -80,10 +86,15 @@ validator = DifficultyValidator(sys, 'validator', reset, target_wire,
 
 sim = sys.getSimulator()
 
+init_end_time = time.perf_counter()
+init_elapsed_seconds = init_end_time - init_start_time
+
 total_clock_cycles = 0
 hashes_completed = 0
 l1_busy_cycles = [0] * NUM_ENGINES
 l2_busy_cycles = [0] * NUM_ENGINES
+
+sim_start_time = time.perf_counter()
 
 while hashes_completed < NUM_BENCHMARK_HASHES:
     sim.clk(1)
@@ -95,6 +106,10 @@ while hashes_completed < NUM_BENCHMARK_HASHES:
             l1_busy_cycles[i] += 1
         if engine.children['L2'].state != 0:
             l2_busy_cycles[i] += 1
+
+sim_end_time = time.perf_counter()
+sim_elapsed_seconds = sim_end_time - sim_start_time
+avg_seconds_per_clk_cycle = sim_elapsed_seconds / total_clock_cycles
 
 avg_cycles_per_hash = total_clock_cycles / hashes_completed
 estimated_seconds = total_clock_cycles / CLOCK_FREQUENCY_HZ
@@ -114,3 +129,11 @@ print(f"assumed clock frequency         = {CLOCK_FREQUENCY_HZ:,} Hz")
 print(f"estimated wall-clock time       = {estimated_seconds*1e3:.3f} ms")
 print(f"estimated throughput            = {hashes_per_second:,.0f} hashes/s")
 print(f"estimated throughput / engine    = {hashes_per_second/NUM_ENGINES:,.0f} hashes/s")
+
+tb_end_time = time.perf_counter()
+tb_elapsed_seconds = tb_end_time - tb_start_time
+
+print("--- Simulator Performance ---")
+print(f"circuit init time         = {init_elapsed_seconds*1e3:.3f} ms")
+print(f"avg time / clk cycle      = {avg_seconds_per_clk_cycle*1e6:.3f} us")
+print(f"total testbench time      = {tb_elapsed_seconds*1e3:.3f} ms")

@@ -10,10 +10,13 @@ import hashlib
 #   seedGenerator -> Bus -> NUM_ENGINES x Sha256CoreV1 -> ResultBus -> DifficultyValidator
 
 
-NUM_ENGINES = 4              # number of Sha256CoreV1 instances sharing the bus
+NUM_ENGINES = 5             # number of Sha256CoreV1 instances sharing the bus
 NUM_RESULTS_TO_COLLECT = 5   # how many validated "blocks" to wait for before reporting
 TARGET = (1 << 256) // 16    # lenient threshold (~1/16 digests pass) so this test finds some quickly
 MAX_CYCLES = 2_000_000       # safety cap in case TARGET is too strict to ever be met
+
+L1_WORDS_PER_CYCLE = 2 # 1 2
+L2_ROUNDS_PER_CYCLE = 4 # 1 2 4
 
 
 class FoundBlockCollector(py4hw.Logic):
@@ -61,7 +64,7 @@ for i in range(NUM_ENGINES):
 
     engine = Sha256CoreV1(sys, f'sha256_engine_{i}', reset, slave_ifs[i],
                            seed_out, nbbytes_out, digest_out, digest_ready, digest_fetched,
-                           debug=False)
+                           debug=False,l2_rounds_per_cycle=L2_ROUNDS_PER_CYCLE,l1_words_per_cycle=L1_WORDS_PER_CYCLE)
     engines.append(engine)
     engine_outputs.append((seed_out, nbbytes_out, digest_out, digest_ready, digest_fetched))
 

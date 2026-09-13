@@ -16,14 +16,6 @@ State machine of the component (identical shape to L1_Handler):
 
 
 class L1_Handler_2x(py4hw.Logic):
-    # Computes 2 message-schedule words/cycle (24 cycles for the expansion
-    # loop instead of L1_Handler's 48). W[i] and W[i+1] never depend on each
-    # other -- (i+1)'s furthest-back reference is (i+1)-16 = i-15, never i
-    # itself -- so unlike L2_Handler's round unrolling, no extra read/write
-    # bandwidth is needed anywhere: the 512-bit input and the L1BufferInterf
-    # output are already fully parallel (all 64 words published in one
-    # shot), only this internal loop was sequential. Same constructor
-    # signature as L1_Handler, drop-in interchangeable.
     def __init__(self,parent,name,reset,initImput,inputReady,inputConsumed,outputFORlayer2:L1BufferInterf,done,scheduleDrained,debug=False):
         super().__init__(parent,name)
 
@@ -116,67 +108,6 @@ class L1_Handler_2x(py4hw.Logic):
         self.done.prepare(done)
         self.inputConsumed.prepare(input_consumed)
         self.output.DataReady.prepare(done)
-        self.output.W0.prepare(self.list_W[0])
-        self.output.W1.prepare(self.list_W[1])
-        self.output.W2.prepare(self.list_W[2])
-        self.output.W3.prepare(self.list_W[3])
-        self.output.W4.prepare(self.list_W[4])
-        self.output.W5.prepare(self.list_W[5])
-        self.output.W6.prepare(self.list_W[6])
-        self.output.W7.prepare(self.list_W[7])
-        self.output.W8.prepare(self.list_W[8])
-        self.output.W9.prepare(self.list_W[9])
-        self.output.W10.prepare(self.list_W[10])
-        self.output.W11.prepare(self.list_W[11])
-        self.output.W12.prepare(self.list_W[12])
-        self.output.W13.prepare(self.list_W[13])
-        self.output.W14.prepare(self.list_W[14])
-        self.output.W15.prepare(self.list_W[15])
-        self.output.W16.prepare(self.list_W[16])
-        self.output.W17.prepare(self.list_W[17])
-        self.output.W18.prepare(self.list_W[18])
-        self.output.W19.prepare(self.list_W[19])
-        self.output.W20.prepare(self.list_W[20])
-        self.output.W21.prepare(self.list_W[21])
-        self.output.W22.prepare(self.list_W[22])
-        self.output.W23.prepare(self.list_W[23])
-        self.output.W24.prepare(self.list_W[24])
-        self.output.W25.prepare(self.list_W[25])
-        self.output.W26.prepare(self.list_W[26])
-        self.output.W27.prepare(self.list_W[27])
-        self.output.W28.prepare(self.list_W[28])
-        self.output.W29.prepare(self.list_W[29])
-        self.output.W30.prepare(self.list_W[30])
-        self.output.W31.prepare(self.list_W[31])
-        self.output.W32.prepare(self.list_W[32])
-        self.output.W33.prepare(self.list_W[33])
-        self.output.W34.prepare(self.list_W[34])
-        self.output.W35.prepare(self.list_W[35])
-        self.output.W36.prepare(self.list_W[36])
-        self.output.W37.prepare(self.list_W[37])
-        self.output.W38.prepare(self.list_W[38])
-        self.output.W39.prepare(self.list_W[39])
-        self.output.W40.prepare(self.list_W[40])
-        self.output.W41.prepare(self.list_W[41])
-        self.output.W42.prepare(self.list_W[42])
-        self.output.W43.prepare(self.list_W[43])
-        self.output.W44.prepare(self.list_W[44])
-        self.output.W45.prepare(self.list_W[45])
-        self.output.W46.prepare(self.list_W[46])
-        self.output.W47.prepare(self.list_W[47])
-        self.output.W48.prepare(self.list_W[48])
-        self.output.W49.prepare(self.list_W[49])
-        self.output.W50.prepare(self.list_W[50])
-        self.output.W51.prepare(self.list_W[51])
-        self.output.W52.prepare(self.list_W[52])
-        self.output.W53.prepare(self.list_W[53])
-        self.output.W54.prepare(self.list_W[54])
-        self.output.W55.prepare(self.list_W[55])
-        self.output.W56.prepare(self.list_W[56])
-        self.output.W57.prepare(self.list_W[57])
-        self.output.W58.prepare(self.list_W[58])
-        self.output.W59.prepare(self.list_W[59])
-        self.output.W60.prepare(self.list_W[60])
-        self.output.W61.prepare(self.list_W[61])
-        self.output.W62.prepare(self.list_W[62])
-        self.output.W63.prepare(self.list_W[63])
+        for i in range(0,64):
+            self.output.W[i].prepare(self.list_W[i])
+

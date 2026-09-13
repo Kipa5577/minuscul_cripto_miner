@@ -1,5 +1,8 @@
 import hashlib
 
+# TODO(review): mySha256/toBinary below duplicate compress_block's logic and use a
+# different naming style (Message_Schedule/Klist vs the rest of the file). toBinary
+# is unused. Consider dropping this prototype and keeping only compress_block.
 # Helper function
 def toBinary(a):
     l,m=[],[]

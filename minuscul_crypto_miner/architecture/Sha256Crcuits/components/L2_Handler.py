@@ -20,9 +20,6 @@ def ror(n,rotations,width):
 
 
 def sha256_round(a,b,c,d,e,f,g,h,k,w):
-    # One SHA-256 compression round: (a..h, round constant, schedule word)
-    # -> the next (a..h). Pure and stateless so L2_Handler_2x/L2_Handler_4x
-    # can chain it multiple times per cycle without duplicating this logic.
     S1 = (ror(e,6,32)) ^ (ror(e,11,32) ^ (ror(e,25,32)))
     ch = (e & f) ^ ((~e&0xFFFFFFFF) & g)
     temp1 = (h + S1 + ch + k + w) & 0xFFFFFFFF
@@ -33,12 +30,19 @@ def sha256_round(a,b,c,d,e,f,g,h,k,w):
 
 
 class L2_Handler(py4hw.Logic):
-    def __init__(self,parent,name,Buffer1_address,Buffer1_Val,output_val,start,startConsumed,done,reset,output_consumed,scheduleDrained,H_init,debug=False):
+    def __init__(self,parent,name,
+                 # Memory Connection with the values buffer
+                 Buffer_address,Buffer_Val,start,startConsumed,
+
+                 #Connections to next componet 
+
+                 output_val,done,reset,output_consumed,scheduleDrained,H_init,debug=False):
         super().__init__(parent,name)
 
-        self.address = self.addOut("Buffer1_address",Buffer1_address)
-        self.Val = self.addIn("Buffer1_Val",Buffer1_Val)
-        self.start = self.addIn("start",start)
+        # Connection to the previous component 
+        self.address = self.addOut("Buffer1_address",Buffer_address)
+        self.Val = self.addIn("Buffer1_Val",Buffer_Val)
+        self.start = self.addIn("start",start) # Signal form the previous component that tells this component that data is avialable 
         self.startConsumed = self.addOut("startConsumed",startConsumed) # to L1_res_Buffer: ack for 'start', so it can safely drop the held signal
 
         self.output = self.addOut("output_val",output_val)

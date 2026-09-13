@@ -2,7 +2,10 @@ import py4hw
 from minuscul_crypto_miner.architecture.Sha256Crcuits import (
     Sha256CoreV1,
     L1_Handler,
+    L1_Handler_2x,
     L2_Handler,
+    L2_Handler_2x,
+    L2_Handler_4x,
     OutputBuffer,
     L1_res_Buffer,
     L1BufferInterf,
@@ -14,6 +17,9 @@ from minuscul_crypto_miner.architecture.bitcoinMining.Sha256Engine import Sha256
 from minuscul_crypto_miner.architecture.bitcoinMining.bitcoin_Nonce_iterator import bitcoin_Nonce_iterator
 from minuscul_crypto_miner.architecture.bitcoinMining.DigestBridge import DigestBridge
 from minuscul_crypto_miner.architecture.bitcoinMining.NonceTracker import NonceTracker
+
+_L1_VARIANTS = {1: L1_Handler, 2: L1_Handler_2x}
+_L2_VARIANTS = {1: L2_Handler, 2: L2_Handler_2x, 4: L2_Handler_4x}
 
 
 class BitcoinMinerEngine(py4hw.Logic):
@@ -30,8 +36,13 @@ class BitcoinMinerEngine(py4hw.Logic):
     def __init__(self,parent,name,reset,
                  header_first64bytes,new_job,merkle_tail,time_field,bits,nBits,
                  result_ready,found_nonce_out,found_nbbytes_out,found_digest_out,result_fetched,
-                 num_lanes=4,debug=False):
+                 num_lanes=4,l1_words_per_cycle=2,l2_rounds_per_cycle=4,debug=False):
         super().__init__(parent,name)
+
+        if l1_words_per_cycle not in _L1_VARIANTS:
+            raise ValueError(f"l1_words_per_cycle must be one of {sorted(_L1_VARIANTS)}, got {l1_words_per_cycle}")
+        if l2_rounds_per_cycle not in _L2_VARIANTS:
+            raise ValueError(f"l2_rounds_per_cycle must be one of {sorted(_L2_VARIANTS)}, got {l2_rounds_per_cycle}")
 
         self.reset = self.addIn("reset",reset)
         self.header_first64bytes = self.addIn("header_first64bytes",header_first64bytes)
@@ -55,6 +66,10 @@ class BitcoinMinerEngine(py4hw.Logic):
                      midstate,midstate_ready,debug)
 
         # --- N nonce-search lanes -------------------------------------------
+        # TODO(review): ~100-line loop body wiring 6 sub-stages per lane inline;
+        # would read better factored into a _build_lane(i) method. Also has
+        # inconsistent naming below (stage1_seed_out_unused vs
+        # finisher_seed_out_UNUSED wire names, snake_case vs SCREAMING_SNAKE).
         engine_outputs = []
         for i in range(num_lanes):
             block_out = self.wire(f'lane_{i}_block',512)
@@ -75,7 +90,8 @@ class BitcoinMinerEngine(py4hw.Logic):
             l1_done = self.wire(f'lane_{i}_l1_done',1)
             schedule_drained = self.wire(f'lane_{i}_schedule_drained',1)
 
-            L1_Handler(self,f'L1_{i}',reset,block_out,block_ready,block_consumed,
+            L1_Variant = _L1_VARIANTS[l1_words_per_cycle]
+            L1_Variant(self,f'L1_{i}',reset,block_out,block_ready,block_consumed,
                        l1_to_buffer,l1_done,schedule_drained,debug)
 
             l2_address = self.wire(f'lane_{i}_l2_address',7)
@@ -83,16 +99,35 @@ class BitcoinMinerEngine(py4hw.Logic):
             l2_word_ready = self.wire(f'lane_{i}_l2_word_ready',1)
             l2_word_ready_consumed = self.wire(f'lane_{i}_l2_word_ready_consumed',1)
 
+            # Extra L1_res_Buffer read ports for round-unrolled L2 variants
+            # (L2_Handler_2x/L2_Handler_4x): mirrors Sha256CoreV1.py's
+            # identical extra_ports construction.
+            extra_ports = []
+            for p in range(1, l2_rounds_per_cycle):
+                extra_ports.append((
+                    self.wire(f'lane_{i}_l2_address_{p}',7),
+                    self.wire(f'lane_{i}_l2_word_{p}',32),
+                ))
+
             L1_res_Buffer(self,f'L1buf_{i}',l1_to_buffer,l2_address,l2_word,
-                          l2_word_ready,l2_word_ready_consumed,debug)
+                          l2_word_ready,l2_word_ready_consumed,debug,
+                          extra_ports=extra_ports)
 
             l2_digest1 = self.wire(f'lane_{i}_l2_digest1',256)
             l2_done = self.wire(f'lane_{i}_l2_done',1)
             l2_output_consumed = self.wire(f'lane_{i}_l2_output_consumed',1)
 
-            L2_Handler(self,f'L2_{i}',l2_address,l2_word,l2_digest1,l2_word_ready,
-                       l2_word_ready_consumed,l2_done,reset,l2_output_consumed,
-                       schedule_drained,midstate,debug)
+            L2_Variant = _L2_VARIANTS[l2_rounds_per_cycle]
+            if l2_rounds_per_cycle == 1:
+                L2_Variant(self,f'L2_{i}',l2_address,l2_word,l2_digest1,l2_word_ready,
+                           l2_word_ready_consumed,l2_done,reset,l2_output_consumed,
+                           schedule_drained,midstate,debug)
+            else:
+                addresses = [l2_address] + [a for a,v in extra_ports]
+                vals = [l2_word] + [v for a,v in extra_ports]
+                L2_Variant(self,f'L2_{i}',addresses,vals,l2_digest1,l2_word_ready,
+                           l2_word_ready_consumed,l2_done,reset,l2_output_consumed,
+                           schedule_drained,midstate,debug)
 
             # OutputBuffer's FIFO pairing isn't semantically used here (its
             # Seed_OUT/NBbytes_OUT are discarded -- DigestBridge only reads
@@ -126,7 +161,7 @@ class BitcoinMinerEngine(py4hw.Logic):
             Sha256CoreV1(self,f'finisher_{i}',reset,slave_if,
                         finisher_seed_out_unused,finisher_nbbytes_out_unused,
                         finisher_digest_out,finisher_digest_ready,finisher_digest_fetched,
-                        debug)
+                        debug,l2_rounds_per_cycle=l2_rounds_per_cycle,l1_words_per_cycle=l1_words_per_cycle)
 
             # --- Nonce tracking: pair the finisher's digest back to its nonce ---
             lane_nonce_as_seed = self.wire(f'lane_{i}_nonce_as_seed',512)

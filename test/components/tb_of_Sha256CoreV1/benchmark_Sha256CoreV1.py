@@ -1,3 +1,4 @@
+import time
 import py4hw
 from minuscul_crypto_miner.architecture.Sha256Crcuits import *
 from minuscul_crypto_miner.architecture.bus.bus import BusInterface
@@ -9,6 +10,9 @@ CLOCK_FREQUENCY_HZ = 50_000_000  # assumed target clock frequency, for translati
 NUM_BENCHMARK_SEEDS = 50
 L1_WORDS_PER_CYCLE = 2 # 1 2
 L2_ROUNDS_PER_CYCLE = 4 # 1 2 4
+
+tb_start_time = time.perf_counter()
+init_start_time = time.perf_counter()
 
 sys = py4hw.HWSystem()
 
@@ -37,9 +41,14 @@ l2_handler = engine.children['L2']
 
 sim = sys.getSimulator()
 
+init_end_time = time.perf_counter()
+init_elapsed_seconds = init_end_time - init_start_time
+
 total_clock_cycles = 0
 l1_busy_cycles = 0
 l2_busy_cycles = 0
+
+sim_start_time = time.perf_counter()
 
 while len(col.captured) < NUM_BENCHMARK_SEEDS:
     sim.clk(1)
@@ -48,6 +57,10 @@ while len(col.captured) < NUM_BENCHMARK_SEEDS:
         l1_busy_cycles += 1
     if l2_handler.state != 0:
         l2_busy_cycles += 1
+
+sim_end_time = time.perf_counter()
+sim_elapsed_seconds = sim_end_time - sim_start_time
+avg_seconds_per_clk_cycle = sim_elapsed_seconds / total_clock_cycles
 
 avg_cycles_per_hash = total_clock_cycles / NUM_BENCHMARK_SEEDS
 estimated_seconds = total_clock_cycles / CLOCK_FREQUENCY_HZ
@@ -62,3 +75,11 @@ print(f"L2_Handler busy cycles    = {l2_busy_cycles} ({100*l2_busy_cycles/total_
 print(f"assumed clock frequency   = {CLOCK_FREQUENCY_HZ:,} Hz")
 print(f"estimated wall-clock time = {estimated_seconds*1e3:.3f} ms")
 print(f"estimated throughput      = {hashes_per_second:,.0f} hashes/s")
+
+tb_end_time = time.perf_counter()
+tb_elapsed_seconds = tb_end_time - tb_start_time
+
+print("--- Simulator Performance ---")
+print(f"circuit init time         = {init_elapsed_seconds*1e3:.3f} ms")
+print(f"avg time / clk cycle      = {avg_seconds_per_clk_cycle*1e6:.3f} us")
+print(f"total testbench time      = {tb_elapsed_seconds*1e3:.3f} ms")

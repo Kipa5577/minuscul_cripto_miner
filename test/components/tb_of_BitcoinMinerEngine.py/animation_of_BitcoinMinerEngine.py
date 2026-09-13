@@ -12,7 +12,7 @@ from minuscul_crypto_miner.architecture.bitcoinMining import BitcoinMinerEngine
 # --- Simulation speed -------------------------------------------------------
 # One simulated clock edge is advanced per animation frame; this controls
 # how many of those frames are drawn per real second.
-CLOCKS_PER_SECOND = 60
+CLOCKS_PER_SECOND = 1000
 
 NUM_LANES = 9              # number of nonce-search lanes -- change freely (each lane draws 12 stage columns)
 NUM_DIGESTS_TO_SHOW = 40   # stop once this many double-hashes have reached DifficultyValidator
@@ -25,6 +25,7 @@ HEADER_FIRST64 = HEADER_TEMPLATE[:64]
 MERKLE_TAIL = HEADER_TEMPLATE[64:68]
 TIME_FIELD = HEADER_TEMPLATE[68:72]
 BITS_FIELD = HEADER_TEMPLATE[72:76]
+
 
 LANE_STAGE_NAMES = [
     "NonceIterator",

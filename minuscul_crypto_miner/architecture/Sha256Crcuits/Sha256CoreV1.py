@@ -29,10 +29,7 @@ class Sha256CoreV1(py4hw.Logic):
         if l1_words_per_cycle not in _L1_VARIANTS:
             raise ValueError(f"l1_words_per_cycle must be one of {sorted(_L1_VARIANTS)}, got {l1_words_per_cycle}")
 
-        # Top-level ports: BusConnection is this engine's slave port on the
-        # shared mining Bus (see bus.py); Seed_OUT/NBbytes_OUT/Digest_OUT
-        # match DifficultyValidator's inputs one-for-one so it plugs straight
-        # into whatever consumes finished (seed, digest) pairs downstream.
+        # Top-level ports: 
         self.reset = self.addIn("reset",reset)
         self.seed_out = self.addOut("Seed_OUT",Seed_OUT)
         self.nbbytes_out = self.addOut("NBbytes_OUT",NBbytes_OUT)
@@ -113,11 +110,7 @@ class Sha256CoreV1(py4hw.Logic):
                         self.l1_handler_to_l1_res_buffer_schedule_ready,
                         self.l2_handler_to_l1_handler_schedule_drained,
                         debug)
-        # Extra L1_res_Buffer read ports for round-unrolled L2 variants
-        # (L2_Handler_2x/L2_Handler_4x): a single read port only delivers
-        # 1 schedule word/cycle no matter how far ahead you prefetch, so
-        # computing >1 round/cycle needs that many parallel ports -- see
-        # L1_res_Buffer's extra_ports and _L2_HandlerNx's docstring.
+        # Extra L1_res_Buffer read ports for round-unrolled L2 variants (L2_Handler_2x/L2_Handler_4x):
         extra_ports = []
         for p in range(1, l2_rounds_per_cycle):
             extra_ports.append((

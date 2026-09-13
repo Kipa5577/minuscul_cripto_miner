@@ -1,4 +1,5 @@
 import os
+import time
 
 import py4hw
 from minuscul_crypto_miner.architecture.bitcoinMining import BitcoinMinerEngine
@@ -17,9 +18,11 @@ from minuscul_crypto_miner.architecture.bitcoinMining import BitcoinMinerEngine
 
 # Benchmark variables
 CLOCK_FREQUENCY_HZ = 50_000_000  # assumed target clock frequency, for translating cycles into wall-clock time
-NUM_LANES = int(os.environ.get("BENCH_NUM_LANES", 30))  # number of nonce-search lanes
-NUM_BENCHMARK_HASHES = int(os.environ.get("BENCH_NUM_HASHES", 500))  # total double-hashes to examine before reporting
+NUM_LANES = int(os.environ.get("BENCH_NUM_LANES", 100))  # number of nonce-search lanes
+NUM_BENCHMARK_HASHES = int(os.environ.get("BENCH_NUM_HASHES", 100))  # total double-hashes to examine before reporting
 NBITS = 0  # decodes to target=0: never passes, this run only measures throughput
+L1_WORDS_PER_CYCLE = int(os.environ.get("BENCH_L1_WORDS_PER_CYCLE", 2))  # 1 2 -- applies to both continuation and finisher stages
+L2_ROUNDS_PER_CYCLE = int(os.environ.get("BENCH_L2_ROUNDS_PER_CYCLE", 4))  # 1 2 4 -- applies to both continuation and finisher stages
 
 # Fixed 80-byte test header -- not a real Bitcoin header, arbitrary but
 # deterministic, since only throughput (not the found digests) is measured.
@@ -42,6 +45,9 @@ class OneShotPulse(py4hw.Logic):
         self.out.prepare(0 if self.fired else 1)
         self.fired = True
 
+
+tb_start_time = time.perf_counter()
+init_start_time = time.perf_counter()
 
 sys = py4hw.HWSystem()
 
@@ -74,13 +80,18 @@ py4hw.Constant(sys, 'result_fetched', 0, result_fetched)  # NBITS=0 means state 
 miner = BitcoinMinerEngine(sys, 'miner', reset, header_first64_wire, new_job,
                             merkle_tail_wire, time_wire, bits_wire, nBits_wire,
                             result_ready, found_nonce_out, found_nbbytes_out, found_digest_out, result_fetched,
-                            num_lanes=NUM_LANES, debug=False)
+                            num_lanes=NUM_LANES,
+                            l1_words_per_cycle=L1_WORDS_PER_CYCLE, l2_rounds_per_cycle=L2_ROUNDS_PER_CYCLE,
+                            debug=False)
 
 # ResultBus/DifficultyValidator drive Digest_Fetched only after DifficultyValidator
 # has examined a digest -- that ack is what we count as "one double-hash completed".
 merged_digest_fetched = miner.children['result_bus'].Digest_Fetched
 
 sim = sys.getSimulator()
+
+init_end_time = time.perf_counter()
+init_elapsed_seconds = init_end_time - init_start_time
 
 total_clock_cycles = 0
 hashes_completed = 0
@@ -91,6 +102,8 @@ finisher_l1_busy_cycles = [0] * NUM_LANES
 finisher_l2_busy_cycles = [0] * NUM_LANES
 
 midstate_ready_wire = miner.children['midstate_engine'].children['controller'].midstate_ready
+
+sim_start_time = time.perf_counter()
 
 while hashes_completed < NUM_BENCHMARK_HASHES:
     sim.clk(1)
@@ -115,6 +128,10 @@ while hashes_completed < NUM_BENCHMARK_HASHES:
         if finisher.children['L2'].state != 0:
             finisher_l2_busy_cycles[i] += 1
 
+sim_end_time = time.perf_counter()
+sim_elapsed_seconds = sim_end_time - sim_start_time
+avg_seconds_per_clk_cycle = sim_elapsed_seconds / total_clock_cycles
+
 avg_cycles_per_hash = total_clock_cycles / hashes_completed
 estimated_seconds = total_clock_cycles / CLOCK_FREQUENCY_HZ
 hashes_per_second = hashes_completed / estimated_seconds
@@ -138,3 +155,11 @@ print(f"assumed clock frequency              = {CLOCK_FREQUENCY_HZ:,} Hz")
 print(f"estimated wall-clock time            = {estimated_seconds*1e3:.3f} ms")
 print(f"estimated throughput                 = {hashes_per_second:,.0f} double-hashes/s")
 print(f"estimated throughput / lane           = {hashes_per_second/NUM_LANES:,.0f} double-hashes/s")
+
+tb_end_time = time.perf_counter()
+tb_elapsed_seconds = tb_end_time - tb_start_time
+
+print("--- Simulator Performance ---")
+print(f"circuit init time         = {init_elapsed_seconds*1e3:.3f} ms")
+print(f"avg time / clk cycle      = {avg_seconds_per_clk_cycle*1e6:.3f} us")
+print(f"total testbench time      = {tb_elapsed_seconds*1e3:.3f} ms")
