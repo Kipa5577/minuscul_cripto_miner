@@ -2,7 +2,7 @@ import os
 import time
 
 import py4hw
-from minuscul_crypto_miner.architecture.bitcoinMining import BitcoinMinerEngine
+from minuscul_crypto_miner.architecture.bitcoinMining.miningengine import BitcoinMinerEngine
 
 
 # Architecture under benchmark:
@@ -116,9 +116,9 @@ while hashes_completed < NUM_BENCHMARK_HASHES:
         hashes_completed += 1
 
     for i in range(NUM_LANES):
-        l1 = miner.children[f'L1_{i}']
-        l2 = miner.children[f'L2_{i}']
-        finisher = miner.children[f'finisher_{i}']
+        l1 = miner.children[f'lane_{i}'].children['L1']
+        l2 = miner.children[f'lane_{i}'].children['L2']
+        finisher = miner.children[f'lane_{i}'].children['finisher']
         if l1.state != 0:
             l1_busy_cycles[i] += 1
         if l2.state != 0:

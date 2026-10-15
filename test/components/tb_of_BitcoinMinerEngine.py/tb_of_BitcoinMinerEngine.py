@@ -1,5 +1,5 @@
 import py4hw
-from minuscul_crypto_miner.architecture.bitcoinMining import BitcoinMinerEngine
+from minuscul_crypto_miner.architecture.bitcoinMining.miningengine import BitcoinMinerEngine
 from minuscul_crypto_miner.algorithms.sha256 import bitcoin_double_sha256
 
 

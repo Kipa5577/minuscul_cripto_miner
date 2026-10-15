@@ -32,11 +32,12 @@ def sha256_round(a,b,c,d,e,f,g,h,k,w):
 class L2_Handler(py4hw.Logic):
     def __init__(self,parent,name,
                  # Memory Connection with the values buffer
-                 Buffer_address,Buffer_Val,start,startConsumed,
+                 Buffer_address,Buffer_Val,
 
-                 #Connections to next componet 
-
-                 output_val,done,reset,output_consumed,scheduleDrained,H_init,debug=False):
+                 #Connections to next componet
+                 # (output_val sits before start/startConsumed to keep the same
+                 # positional order as L2_Handler_2x/L2_Handler_4x and every caller)
+                 output_val,start,startConsumed,done,reset,output_consumed,scheduleDrained,H_init,debug=False):
         super().__init__(parent,name)
 
         # Connection to the previous component 

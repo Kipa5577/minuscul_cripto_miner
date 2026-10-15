@@ -10,7 +10,8 @@ State machine of the component:
 
 class DifficultyValidator(py4hw.Logic):
     def __init__(self,parent,name,reset,Target,Digest_IN,Digest_Ready,Digest_Fetched,
-                 Seed_IN,NBbytes_IN,Result_Ready,Seed_OUT,NBbytes_OUT,Digest_OUT,Result_Fetched,debug=False):
+                 Seed_IN,NBbytes_IN,Result_Ready,Seed_OUT,NBbytes_OUT,Digest_OUT,Result_Fetched,debug=False,
+                 bitcoin_byte_order=False):
         super().__init__(parent,name)
 
         self.reset = self.addIn("reset",reset)
@@ -32,6 +33,10 @@ class DifficultyValidator(py4hw.Logic):
         self.Digest_OUT = self.addOut("Digest_OUT",Digest_OUT)
         self.Result_Fetched = self.addIn("Result_Fetched",Result_Fetched)
 
+        # bitcoin_byte_order: compare the digest the way the Bitcoin network
+        # does -- as a little-endian 256-bit number (its bytes reversed) --
+        # instead of as a big-endian one. Digest_OUT is the raw digest either way.
+        self.bitcoin_byte_order = bitcoin_byte_order
         self.debug = debug
         self.state = 0
         self.seed = 0
@@ -60,7 +65,8 @@ class DifficultyValidator(py4hw.Logic):
                     digest_fetched = 1
                     self.pending_examination = True
 
-                    if digest <= target: 
+                    value = int.from_bytes(digest.to_bytes(32,'big'),'little') if self.bitcoin_byte_order else digest
+                    if value <= target: 
                         self.digest = digest
                         self.seed = self.Seed_IN.get()
                         self.nbBytes = self.NBbytes_IN.get()

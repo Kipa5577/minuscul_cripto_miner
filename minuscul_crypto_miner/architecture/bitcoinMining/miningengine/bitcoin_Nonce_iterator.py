@@ -3,10 +3,17 @@ import py4hw
 
 '''
 State machine of the component:
-0 = reset    # hold nonce at lane_id while reset is asserted
+0 = reset    # no block presented; (re)loads the start nonce on activation
 1 = active   # continuously presents the already-padded 512b block; advances
              # to the next nonce the instant block_consumed is seen, in the
              # same cycle -- no artificial gap before the next block is ready.
+             # Dropping start_enable returns to reset[0] (used by the chip's
+             # Control to stop a lane between jobs).
+
+The start nonce/stride are the elaboration-time lane_id/stride by default,
+or -- when the optional nonce_start/nonce_stride wires are given -- sampled
+from those wires at each activation, so a controller can re-partition the
+nonce space per job at runtime (see BitcoinMiningChip).
 
 Block layout (matches SHA-256's own padding rules for an 80-byte Bitcoin
 header split into two 64-byte blocks -- this is the *second* block, so its
@@ -36,7 +43,8 @@ class bitcoin_Nonce_iterator(py4hw.Logic):
     # there is no InputBuffer/InputFormatter/Bus in front of it, since each
     # lane owns its iterator outright and no dispatch/arbitration is needed.
     def __init__(self,parent,name,reset,start_enable,merkle_tail,time_field,bits,
-                 block_out,block_ready,block_consumed,nonce_out,lane_id=0,stride=1,debug=False):
+                 block_out,block_ready,block_consumed,nonce_out,lane_id=0,stride=1,
+                 nonce_start=None,nonce_stride=None,debug=False):
         super().__init__(parent,name)
 
         self.reset = self.addIn("reset",reset)
@@ -64,6 +72,8 @@ class bitcoin_Nonce_iterator(py4hw.Logic):
         # produced it (block_out alone isn't enough -- once double-SHA256'd,
         # the nonce isn't recoverable from the digest).
         self.nonce_out = self.addOut("nonce_out",nonce_out)
+        self.nonce_start = self.addIn("nonce_start",nonce_start) if nonce_start is not None else None
+        self.nonce_stride = self.addIn("nonce_stride",nonce_stride) if nonce_stride is not None else None
 
         self.lane_id = lane_id & 0xFFFFFFFF
         self.stride = stride
@@ -83,6 +93,14 @@ class bitcoin_Nonce_iterator(py4hw.Logic):
         nonce = self.nonce & 0xFFFFFFFF
         self.block = (merkle_tail<<480)|(time_field<<448)|(bits<<416)|(nonce<<384)|(0x80<<376)|640
 
+    def _load_start(self):
+        if self.nonce_start is not None:
+            self.nonce = self.nonce_start.get() & 0xFFFFFFFF
+        else:
+            self.nonce = self.lane_id
+        if self.nonce_stride is not None:
+            self.stride = self.nonce_stride.get() & 0xFFFFFFFF
+
     def _advance(self):
         self.nonce = (self.nonce + self.stride) & 0xFFFFFFFF
         self._build_block()
@@ -91,14 +109,22 @@ class bitcoin_Nonce_iterator(py4hw.Logic):
 
         match self.state:
             case 0:
-                self.nonce = self.lane_id
                 if self.reset.get() == 0 and self.start_enable.get() == 1:
+                    self._load_start()
                     self._build_block()
                     self.state = 1
                     if self.debug:
                         print(f"bitcoin_Nonce_iterator:reset[0]->active[1] nonce={self.nonce:#x}")
             case 1:
-                if self.block_consumed.get() == 1:
+                # A block consumed in the same cycle start_enable drops is
+                # still tracked downstream (NonceTracker pushes on
+                # block_consumed); nonce is left untouched here so the
+                # pushed nonce stays correct.
+                if self.start_enable.get() == 0 or self.reset.get() == 1:
+                    self.state = 0
+                    if self.debug:
+                        print("bitcoin_Nonce_iterator:active[1]->reset[0]")
+                elif self.block_consumed.get() == 1:
                     self._advance()
                     if self.debug:
                         print(f"bitcoin_Nonce_iterator:active[1] nonce={self.nonce:#x}")

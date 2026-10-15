@@ -6,7 +6,7 @@ from matplotlib.animation import FuncAnimation
 from matplotlib.patches import Rectangle
 import py4hw
 
-from minuscul_crypto_miner.architecture.bitcoinMining import BitcoinMinerEngine
+from minuscul_crypto_miner.architecture.bitcoinMining.miningengine import BitcoinMinerEngine
 
 
 # --- Simulation speed -------------------------------------------------------
@@ -172,13 +172,13 @@ _prev_resultbus_busy = False
 
 
 def _lane_stage_busy(i):
-    nonce_iter = miner.children[f'nonce_iter_{i}']
-    l1 = miner.children[f'L1_{i}']
-    l1buf = miner.children[f'L1buf_{i}']
-    l2 = miner.children[f'L2_{i}']
-    outbuf1 = miner.children[f'stage1_outbuf_{i}']
-    bridge = miner.children[f'digest_bridge_{i}']
-    finisher = miner.children[f'finisher_{i}']
+    nonce_iter = miner.children[f'lane_{i}'].children['nonce_iter']
+    l1 = miner.children[f'lane_{i}'].children['L1']
+    l1buf = miner.children[f'lane_{i}'].children['L1buf']
+    l2 = miner.children[f'lane_{i}'].children['L2']
+    outbuf1 = miner.children[f'lane_{i}'].children['stage1_outbuf']
+    bridge = miner.children[f'lane_{i}'].children['digest_bridge']
+    finisher = miner.children[f'lane_{i}'].children['finisher']
     fin_inbuf = finisher.children['inbuf']
     fin_inp = finisher.children['inp']
     fin_l1 = finisher.children['L1']
@@ -241,7 +241,7 @@ def advance_one_clock():
         prev_busy = _prev_lane_busy[lane_idx]
         slots = lane_slots[lane_idx]
 
-        nonce_iter = miner.children[f'nonce_iter_{lane_idx}']
+        nonce_iter = miner.children[f'lane_{lane_idx}'].children['nonce_iter']
         cur_nonce = nonce_iter.nonce
 
         for i in reversed(range(NUM_LANE_STAGES)):

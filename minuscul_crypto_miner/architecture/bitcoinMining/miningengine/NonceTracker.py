@@ -19,7 +19,7 @@ import py4hw
 # digest_ready_in ever turns visible, with no reaction lag.
 class NonceTracker(py4hw.Logic):
     def __init__(self,parent,name,nonce_push_in,push_valid_in,
-                 digest_ready_in,digest_fetched_in,nonce_out,debug=False):
+                 digest_ready_in,digest_fetched_in,nonce_out,empty_out=None,debug=False):
         super().__init__(parent,name)
 
         self.nonce_push_in = self.addIn("nonce_push_in",nonce_push_in)
@@ -27,6 +27,11 @@ class NonceTracker(py4hw.Logic):
         self.digest_ready_in = self.addIn("digest_ready_in",digest_ready_in)
         self.digest_fetched_in = self.addIn("digest_fetched_in",digest_fetched_in)
         self.nonce_out = self.addOut("nonce_out",nonce_out)
+        # FIFO empty == no nonce of this lane is in flight anywhere between
+        # L1 and the result arbiter (pushed on block consumption, popped when
+        # the finisher's digest is fetched) -- the chip uses it to know a
+        # lane has fully drained before starting the next job.
+        self.empty_out = self.addOut("empty_out",empty_out) if empty_out is not None else None
 
         self.debug = debug
         self.nonce_fifo = []
@@ -48,3 +53,5 @@ class NonceTracker(py4hw.Logic):
                     print(f"NonceTracker:popped nonce={popped:#x} (fifo depth={len(self.nonce_fifo)})")
 
         self.nonce_out.prepare(self.nonce_fifo[0] if len(self.nonce_fifo) > 0 else 0)
+        if self.empty_out is not None:
+            self.empty_out.prepare(1 if len(self.nonce_fifo) == 0 else 0)

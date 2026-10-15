@@ -8,6 +8,7 @@ from minuscul_crypto_miner.architecture.Sha256Crcuits.components.L2_Handler_4x i
 from minuscul_crypto_miner.architecture.Sha256Crcuits.components.InputFormatter import InputFormatter
 from minuscul_crypto_miner.architecture.Sha256Crcuits.components.InputBuffer import InputBuffer
 from minuscul_crypto_miner.architecture.Sha256Crcuits.components.OutputBuffer import OutputBuffer
+from minuscul_crypto_miner.architecture.Sha256Crcuits.components.Sha256Compressor import Sha256Compressor
 from minuscul_crypto_miner.architecture.Sha256Crcuits.NotInUse.ror import ror
 from minuscul_crypto_miner.architecture.Sha256Crcuits.components.L1_res_Buffer import (
     L1BufferInterf,
@@ -25,6 +26,7 @@ __all__ = [
     "InputFormatter",
     "InputBuffer",
     "OutputBuffer",
+    "Sha256Compressor",
     "ror",
     "L1BufferInterf",
     "L1_res_Buffer",
