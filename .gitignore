@@ -218,4 +218,6 @@ __marimo__/
 .streamlit/secrets.toml
 
 
-criptoMiner_env
+criptoMiner_envd
+cm_env 
+.vscode

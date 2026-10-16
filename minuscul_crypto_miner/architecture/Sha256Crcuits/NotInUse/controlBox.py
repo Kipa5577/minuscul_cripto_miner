@@ -1,6 +1,7 @@
 import py4hw 
 
 '''
+NOT USED FOR THE MOMENT 
 Finite state machine
 This finite sate machine should controll things in such a way to make the algoritm stages work in parallel
 '''

@@ -1,0 +1,1 @@
+This is the section dedicated to documets containing the knolige gained during the creation of this project
