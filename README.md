@@ -42,9 +42,86 @@ flowchart LR
 
 **How it mines:** the host sends a block header over UART. The constant first 64 bytes are hashed **once** for the whole chip (the midstate). Each core then searches its own slice of the nonce space (offset + stride, so no two cores test the same nonce), runs the double SHA-256, and checks the result against the target locally. Only winning hashes travel to the arbiter tree, which reports the first one back to the host.
 
-### UART protocol
+---
 
-`NEW_JOB` · `ABORT_JOB` · `PING` · `READ_REG` · `WRITE_REG` → replies `JOB_ACK` / `JOB_NACK` · `PONG` · `REG_VALUE` · `WRITE_ACK` · `RESULT`. Frames carry a checksum; command codes and helpers live in [`protocol.py`](minuscul_crypto_miner/architecture/bitcoinMining/bitcoinminingchip/protocol.py), shared by the hardware and the testbench.
+## Programming the chip
+
+The chip has only three pins (`reset`, `uart_rx`, `uart_tx`) and is driven entirely over a UART link (8N1, baud rate = `f_clk / clks_per_bit`). The host sends framed commands; the chip answers with framed responses.
+
+```mermaid
+sequenceDiagram
+    participant H as Host
+    participant C as Chip
+    H->>C: WRITE_REG ACTIVE_CORES_MASK / CORE_BASE_OFFSET / JOB_TIMEOUT (optional)
+    C-->>H: WRITE_ACK
+    H->>C: NEW_JOB (first 76 bytes of the block header)
+    C-->>H: JOB_ACK
+    Note over C: midstate computed once,<br/>all cores search their nonce range<br/>(STATUS = 1, busy)
+    alt a core finds a hash below the target
+        C-->>H: RESULT (nonce + digest)
+    else JOB_TIMEOUT expires
+        C-->>H: JOB_NACK (timeout)
+    end
+```
+
+`PING` and `READ_REG` are answered in every state, including while mining. `ABORT_JOB` stops the search at any time; it has no reply, so the host polls `STATUS` until it reads idle before sending the next job.
+
+<details>
+<summary><b>Register map</b> (32-bit registers, read/written over UART)</summary>
+
+| Address | Name | Access | Contents |
+|---|---|---|---|
+| `0x00` | `CHIP_ID` | R | fixed identifier, `0xB7C00001` (chip version 1) |
+| `0x01` | `STATUS` | R | `0` idle · `1` busy (loading, running or draining) · `2` result pending · `3` error (last job timed out) |
+| `0x02` | `NUM_CORES` | R | number of cores instantiated (fixed at build time) |
+| `0x03` | `ACTIVE_CORES_MASK` | R/W | bit *i* enables core *i* for the next job; defaults to all ones |
+| `0x04` | `CORE_BASE_OFFSET` | R/W | nonce offset added to every core, so several chips can share one job without overlapping |
+| `0x05` | `JOB_TIMEOUT` | R/W | cycles to search before auto-abort and `JOB_NACK` (timeout); `0` disables it |
+
+Registers can only be written while the chip is idle; a write during a job, or to a read-only or unknown address, gets `REG_NACK`.
+
+</details>
+
+<details>
+<summary><b>Frame format and commands</b></summary>
+
+**Frame (both directions):**
+
+| Field | Size | Contents |
+|---|---|---|
+| `SOF` | 1 B | `0xAA`, start of frame |
+| `CMD` | 1 B | command or response code |
+| `LEN` | 2 B | payload length, big-endian |
+| `PAYLOAD` | `LEN` B | command-specific body |
+| `CHK` | 1 B | XOR of `CMD`, `LEN` and `PAYLOAD` |
+
+A frame with a bad checksum, an unknown `CMD`, or that stalls for 20 character times is dropped silently; the host is expected to time out and resend.
+
+**Host → chip:**
+
+| `CMD` | Name | `LEN` | Payload |
+|---|---|---|---|
+| `0x01` | `NEW_JOB` | 76 | `header_first64bytes` (64) ‖ `merkle_tail` (4) ‖ `time` (4) ‖ `bits` (4); the target is derived from `bits` |
+| `0x02` | `ABORT_JOB` | 0 | — |
+| `0x03` | `PING` | 0 | — |
+| `0x04` | `READ_REG` | 1 | `addr` |
+| `0x05` | `WRITE_REG` | 5 | `addr` ‖ `value` (4) |
+
+**Chip → host:**
+
+| `CMD` | Name | `LEN` | Payload |
+|---|---|---|---|
+| `0x81` | `JOB_ACK` | 0 | — |
+| `0x82` | `JOB_NACK` | 1 | reason: `0x01` malformed · `0x02` busy · `0x03` timeout · `0x04` no active cores |
+| `0x83` | `RESULT` | 36 | `found_nonce` (4, header bytes 76–79) ‖ `found_digest` (32) |
+| `0x84` | `PONG` | 0 | — |
+| `0x85` | `REG_VALUE` | 5 | `addr` ‖ `value` (4) |
+| `0x86` | `WRITE_ACK` | 1 | `addr` |
+| `0x87` | `REG_NACK` | 1 | `addr` |
+
+Codes and the `build_frame()` / `checksum()` helpers live in [`protocol.py`](minuscul_crypto_miner/architecture/bitcoinMining/bitcoinminingchip/protocol.py), shared by the hardware and the testbench. Full protocol details: [chip A README](minuscul_crypto_miner/architecture/bitcoinMining/bitcoinminingchip/README.md).
+
+</details>
 
 ---
 
@@ -74,7 +151,6 @@ Detailed analyses:
 [chip A](minuscul_crypto_miner/architecture/bitcoinMining/bitcoinminingchip/README.md) ·
 [chip A performance](minuscul_crypto_miner/architecture/bitcoinMining/bitcoinminingchip/performance_evaluation.md) ·
 [chip B](minuscul_crypto_miner/architecture/bitcoinMining/BitcoinMiningChipB/README.md)
-
 
 ## Repository structure
 
@@ -128,5 +204,3 @@ The animation draws the chip's floorplan and moves each nonce attempt as a colou
 - [x] Fully pipelined variant (chip B)
 - [ ] SystemVerilog rewrite (started)
 - [ ] FPGA prototype and synthesis results (real Fmax, area)
-
-
